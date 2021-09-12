@@ -1,10 +1,14 @@
 
 __all__ = ['TEventLoop']
 
-from Gaugi.messenger import Logger, LoggingLevel
-from Gaugi.messenger.macros import *
+from Gaugi        import Logger, LoggingLevel
+from Gaugi.utils  import get_property
+from Gaugi.utils  import expand_folders
+from Gaugi.utils  import progressbar
+from Gaugi.macros import *
 from Gaugi import StatusCode,StatusTool,StatusWTD
-from Gaugi.gtypes import NotSet
+
+import collections
 
 
 class TEventLoop( Logger ):
@@ -13,28 +17,25 @@ class TEventLoop( Logger ):
 
     # Retrieve all information needed
     Logger.__init__(self, **kw)
-    from Gaugi import retrieve_kw
-    fList            = retrieve_kw( kw, 'inputFiles', []                              )
-    self._ofile      = retrieve_kw( kw, 'outputFile', "histos.root"                   )
-    self._treePath   = retrieve_kw( kw, 'treePath'  , NotSet                          )
-    self._dataframe  = retrieve_kw( kw, 'dataframe' , NotSet                          )
-    self._nov        = retrieve_kw( kw, 'nov'       , -1                              )
-    self._mute_progressbar   = retrieve_kw( kw, 'mute_progressbar', False             )
-    self._level = LoggingLevel.retrieve( retrieve_kw(kw, 'level', LoggingLevel.INFO ) )
+    fList            = get_property( kw, 'inputFiles', []                              )
+    self._ofile      = get_property( kw, 'outputFile', "histos.root"                   )
+    self._treePath   = get_property( kw, 'treePath'  , NotSet                          )
+    self._dataframe  = get_property( kw, 'dataframe' , NotSet                          )
+    self._nov        = get_property( kw, 'nov'       , -1                              )
+    self._mute_progressbar   = get_property( kw, 'mute_progressbar', False             )
+    self._level = LoggingLevel.retrieve( get_property(kw, 'level', LoggingLevel.INFO ) )
     self._name       = name
     
 
-    from Gaugi import csvStr2List, expandFolders
     files = []
     for path in fList:
       # Need to loop over for LCG grid
       for f in path.split(','):
-        files.extend( expandFolders( f ) )
+        files.extend( expand_folders( f ) )
     self._fList = files
 
 
 
-    import collections
     self._containersSvc  = collections.OrderedDict() # container dict to hold all EDMs
     self._storegateSvc = None # storegate service to hold all hists
     self._t = NotSet # TChain used to hold the ttree files
@@ -56,7 +57,6 @@ class TEventLoop( Logger ):
     MSG_INFO( self, 'Initializing TEventLoop...')
 
     import ROOT
-    from Gaugi import progressbar
     ### Prepare to loop:
     self._t = ROOT.TChain()
     for inputFile in progressbar(self._fList, len(self._fList), prefix= "Creating collection tree ", logger=self._logger):
@@ -108,11 +108,10 @@ class TEventLoop( Logger ):
     # Create the StoreGate service
     if not self._storegateSvc:
       MSG_INFO( self, "Creating StoreGate...")
-      from Gaugi.storage import StoreGate
+      from Gaugi import StoreGate
       self._storegateSvc = StoreGate( self._ofile , level = self._level)
     else:
       MSG_INFO( self, 'The StoraGate was created for ohter service. Using the service setted by client.')
-    
     
     return StatusCode.SUCCESS
 
@@ -123,7 +122,6 @@ class TEventLoop( Logger ):
     # retrieve values
     entries = self.getEntries()
     ### Loop over events
-    from Gaugi import progressbar
     if not self._mute_progressbar:
       step = int(entries/100) if int(entries/100) > 0 else 1
       for entry in progressbar(range(self._entries), entries, step=step, prefix= "Looping over entries ", logger=self._logger):

@@ -3,25 +3,33 @@
 __all__ = ['StoreGate','restoreStoreGate']
 
 
-from Gaugi.messenger  import Logger, LoggingLevel
+from Gaugi import Logger, LoggingLevel
+from Gaugi.utils import get_property
+from Gaugi.utils import expand_path
+from Gaugi.utils import ensure_extension
+
+from ROOT import TFile
 import numpy as np
 
 
+#
+# StoreGate manager
+#
 class StoreGate( Logger ) :
 
-
+  #
+  # Constructor
+  #
   def __init__( self, outputFile, **kw ):
-    Logger.__init__(self,**kw)
-    if not outputFile.endswith('.root'):
-      outputFile += '.root'
-    from Gaugi.utilities import retrieve_kw
-    # Use this property to rebuild the storegate from a root file
-    self._restoreStoreGate=retrieve_kw(kw,'restoreStoreGate',False)
-    filterDirs=retrieve_kw(kw,'filterDirs', None)
-    #Create TFile object to hold everything
-    from ROOT import TFile
-    from Gaugi import expandPath
-    outputFile = expandPath( outputFile )
+
+    Logger.__init__(self)
+
+    outputFile = ensure_extension(outputFile,'root')
+    self._restoreStoreGate = get_property(kw,'restoreStoreGate',False)
+    filterDirs             = get_property(kw,'filterDirs', None)
+    
+    self._outputFile = expand_path( outputFile )
+
     if self._restoreStoreGate:
       import os.path
       if not os.path.exists( outputFile ):
@@ -33,8 +41,6 @@ class StoreGate( Logger ) :
     self._currentDir = ""
     self._objects    = dict()
     self._dirs       = list()
-    import os
-    self._outputFile = os.path.abspath(outputFile)
 
     if self._restoreStoreGate:
       retrievedObjs = self.__restore(self._file, filterDirs=filterDirs)
@@ -47,12 +53,11 @@ class StoreGate( Logger ) :
     return self._outputFile
 
 
-  #Save objects and delete storegate
+  #
+  # Save objects and delete storegate
+  #
   def __del__(self):
     self._dirs = None
-    #for val in self._objects.itervalues():
-    #  print "deleting", val
-    #  val.Delete()
     self._objects = None
     import gc
     gc.collect()
@@ -63,8 +68,9 @@ class StoreGate( Logger ) :
   def write(self):
     self._file.Write()
 
-
-  #Create a folder
+  #
+  # Create a folder
+  #
   def mkdir(self, theDir):
     fullpath = (theDir).replace('//','/')    
     if not fullpath in self._dirs:
@@ -74,8 +80,9 @@ class StoreGate( Logger ) :
       self._currentDir = fullpath
       self._logger.verbose('Created directory with name %s', theDir)
 
-
-  #Go to the pointed directory
+  #
+  # Go to the pointed directory
+  #
   def cd(self, theDir):
     self._currentDir = ''
     self._file.cd()
@@ -97,7 +104,7 @@ class StoreGate( Logger ) :
       self._dirs.append(fullpath)
       self._objects[fullpath] = obj
       #obj.Write()
-      self._logger.debug('Saving object type %s into %s',type(obj), fullpath)
+      MSG_DEBUG(self, 'Saving object type %s into %s',type(obj), fullpath)
 
 
   def addObject( self, obj ):
@@ -109,7 +116,7 @@ class StoreGate( Logger ) :
       self._dirs.append(fullpath)
       self._objects[fullpath] = obj
       obj.Write()
-      self._logger.debug('Saving object type %s into %s',type(obj), fullpath)
+      MSG_DEBUG(self, 'Saving object type %s into %s',type(obj), fullpath)
 
 
   def histogram(self, feature):
@@ -118,19 +125,19 @@ class StoreGate( Logger ) :
       fullpath='/'+fullpath
     if fullpath in self._dirs:
       obj = self._objects[fullpath]
-      self._logger.verbose('Retrieving object type %s into %s',type(obj), fullpath)
+      #self._logger.verbose('Retrieving object type %s into %s',type(obj), fullpath)
       return obj
     else:
-      #None object if doesnt exist into the store
-      self._logger.warning('Object with path %s doesnt exist', fullpath)
+      MSG_WARNING(self, 'Object with path %s doesnt exist', fullpath)
       return None
 
 
   def getDir(self, path):
     return self._file.GetDirectory(path)
 
-
+  #
   # Use this to set labels into the histogram
+  #
   def setLabels(self, feature, labels):
     histo = self.histogram(feature)
     if not histo is None:
@@ -141,9 +148,9 @@ class StoreGate( Logger ) :
 	        for i in range( histo.GetNbinsX(), min( len(labels), histo.GetNbinsX()+histo.GetNbinsY() ) ):
 	          bin = i+1-histo.GetNbinsX();  histo.GetYaxis().SetBinLabel(bin, labels[i])
       except:
-        self._logger.fatal("Can not set the labels! abort.")
+        MSG_FATAL(self, "Can not set the labels! abort.")
     else:
-      self._logger.warning("Can not set the labels because this feature (%s) does not exist into the storage",feature)
+      MSG_WARNING(self, "Can not set the labels because this feature (%s) does not exist into the storage",feature)
 
 
   def collect(self):
@@ -192,7 +199,7 @@ class StoreGate( Logger ) :
         else:
           yield basepath+kname, d.Get(kname)
     except AttributeError as e:
-      self._logger.debug("Ignore reading object of type %s.",type(d))
+      MSG_DEBUG(self, "Ignore reading object of type %s.",type(d))
 
 
 

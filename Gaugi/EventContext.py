@@ -1,16 +1,15 @@
 
 __all__ = ["EventContext"]
 
-from Gaugi.messenger  import Logger
-from Gaugi.gtypes import NotSet
+from Gaugi import Logger
 from Gaugi import StatusCode
+import collections
 
 
 class EventContext( Logger ):
 
   def __init__(self, t):
     Logger.__init__(self)
-    import collections
     self._containers = collections.OrderedDict()
     self._tree=NotSet
     self._decorations = dict()

@@ -1,9 +1,11 @@
 
 __all__ = ['EDM']
 
-from Gaugi.messenger import Logger
-from Gaugi.messenger.macros import *
-from Gaugi import EnumStringification, StatusCode
+from Gaugi import Logger
+from Gaugi import EnumStringification
+from Gaugi import StatusCode
+from Gaugi.macros import *
+
 from ROOT import AddressOf
 
 

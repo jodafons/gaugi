@@ -1,13 +1,13 @@
 
 __all__ = ['Algorithm']
 
-from Gaugi.messenger import  Logger
-from Gaugi.messenger.macros import *
-from Gaugi.enumerations import StatusTool, StatusWTD
+from Gaugi import Logger
 from Gaugi import EnumStringification
-from Gaugi import NotSet
 from Gaugi import StatusCode
-from Gaugi import Property
+from Gaugi import StoreGate
+from Gaugi.macros import *
+from Gaugi.enumerators import StatusTool, StatusWTD
+
 
 
 
@@ -23,46 +23,9 @@ class Algorithm( Logger ):
     self._initialized = StatusTool.NOT_INITIALIZED
     self._finalized = StatusTool.NOT_FINALIZED
     # services and EDMs
-    self._context   = NotSet
-    self._storegateSvc = NotSet
-    self._dataframe = NotSet
-
-    # property 
-    self.__property = {}
-
-
-
-
-  #
-  # Declare property
-  #
-  def declareProperty( self, key, value = None, comment = "" ):
-    if not key in self.__property.keys():
-      self.__property[ key ] = Property(key, value, comment)
-      self.__dict__[key] = value
-    else:
-      MSG_FATAL( self, "Property with name %s was configure before.", key )
-
-
-	#
-	# Set the value of the property
-	#	 
-  def setProperty( self, key, value ):
-    if key in self.__property:
-      self.__property[key].setValue(value)
-    else:
-      MSG_FATAL( self, "Property with name %s is not in the %s object", key, self.__class__.__name__)
-
-
- 	#
-	# Get the value of the property
-	#
-  def getProperty( self, key ):
-    if key in self.__property.keys():
-      return self.__property[key].value()
-    else:
-      MSG_FATAL( self, "Property with name %s is not in the  %s object", key, self.__class__.__name__)
-
+    self._context      = None
+    self._storegateSvc = None
+    self._dataframe    = None
 
 
 
@@ -106,7 +69,6 @@ class Algorithm( Logger ):
 
   @storeSvc.setter
   def storeSvc(self, s):
-    from Gaugi.storage import StoreGate
     if not isinstance(s, StoreGate):
       PRH_MSG_FATAL( self, "Attempted to set StoreGate to instance of non StoreGate type")
     self._storegateSvc=s

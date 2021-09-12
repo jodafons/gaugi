@@ -2,8 +2,8 @@
 
 __all__ = ['Merge', 'Parallel', 'SafeProcess']
 
-from Gaugi.messenger import LoggingLevel, Logger
-from Gaugi.messenger.macros import *
+from Gaugi import LoggingLevel, Logger
+from Gaugi.macros import *
 from multiprocessing import Process, Event
 from multiprocessing import Queue
 

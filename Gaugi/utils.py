@@ -1,178 +1,156 @@
 #coding: utf-8
-__all__ = ['str_to_class','csvStr2List', 'get_attributes','printArgs', 
-           'stdvector_to_list','list_to_stdvector', 'progressbar',
-           'appendToOutput','retrieve_kw','checkForUnusedVars',
-					 'traverse', 'Holder']
+__all__ = []
 
-import re, os, __main__
-import sys
-import code
-import types
+
+import numpy as np
 import pickle as cPickle
 import gzip
+import tarfile
+import tempfile
+import os
+import sys
+import shutil
+import signal
 import inspect
 import numpy as np
-from Gaugi.gtypes import NotSet
 from Gaugi import RCM_NO_COLOR, RCM_GRID_ENV
+from time import sleep, time
 
 
 
+def expand_path(path):
+  " Returns absolutePath path expanding variables and user symbols "
+  if not isinstance( path, basestring):
+    raise BadFilePath(path)
+  try:
+    return os.path.abspath( os.path.join(os.path.dirname(path), os.readlink( os.path.expanduser( os.path.expandvars( path ) ) ) ) )
+  except OSError:
+    return os.path.abspath( os.path.expanduser( os.path.expandvars( path ) ) )
 
 
 
-class Holder( object ):
+def expand_folders( pathList, filters = None, logger = None, level = None):
   """
-  A simple object holder
+    Expand all folders to the contained files using the filters on pathList
+
+    Input arguments:
+
+    -> pathList: a list containing paths to files and folders;
+    filters;
+    -> filters: return a list for each filter with the files contained on the
+    list matching the filter glob.
+    -> logger: whether to print progress using logger;
+    -> level: logging level to print messages with logger;
+
+    WARNING: This function is extremely slow and will severely decrease
+    performance if used to expand base paths with several folders in it.
   """
-  def __init__(self, obj = None, replaceable = True):
-    self._obj = obj
-    self._replaceable = replaceable
-  def __call__(self):
-    return self._obj
-  def isValid(self):
-    return self._obj not in (None, NotSet)
-  def set(self, value):
-    if self._replaceable or not self.isValid():
-      self._obj = value
+  if not isinstance( pathList, (list,tuple,) ):
+    pathList = [pathList]
+  from glob import glob
+  if filters is None:
+    filters = ['*']
+  if not( type( filters ) in (list,tuple,) ):
+    filters = [ filters ]
+  retList = [[] for idx in range(len(filters))]
+  from Gaugi.utils import progressbar, traverse
+  pathList = list(traverse([glob(path) if '*' in path else path for path in traverse(pathList,simple_ret=True)],simple_ret=True))
+  for path in progressbar( pathList, len(pathList), 'Expanding folders: ', 60, 50,
+                           True if logger is not None else False, logger = logger,
+                           level = level):
+    path = expand_path( path )
+    if not os.path.exists( path ):
+      raise ValueError("Cannot reach path '%s'" % path )
+    if os.path.isdir(path):
+      for idx, filt in enumerate(filters):
+        cList = filter(lambda x: not(os.path.isdir(x)), [ f for f in glob( os.path.join(path,filt) ) ])
+        if cList:
+          retList[idx].extend(cList)
+      folders = [ os.path.join(path,f) for f in os.listdir( path ) if os.path.isdir( os.path.join(path,f) ) ]
+      if folders:
+        recList = expand_folders( folders, filters )
+        if len(filters) is 1:
+          recList = [recList]
+        for l in recList:
+          retList[idx].extend(l)
     else:
-      raise RuntimeError("Cannot replace held object.")
+      for idx, filt in enumerate(filters):
+        if path in glob( os.path.join( os.path.dirname( path ) , filt ) ):
+          retList[idx].append( path )
+  if len(filters) is 1:
+    retList = retList[0]
+  return retList
 
-def retrieve_kw( kw, key, default = NotSet ):
+
+
+def ensure_extension( filename, extension ):
+  return filename if filename.endswith(extension) else filename + '.' + extension
+
+
+def check_extension( filename , extension):
+  return True if filename.endswith("."+extension) else False
+  
+
+def mkdir_p(path):
+  import errno
+  path = os.path.expandvars( path )
+  try:
+    if not os.path.exists( path ):
+      os.makedirs(path)
+  except OSError as exc: # Python >2.5
+    if exc.errno == errno.EEXIST and os.path.isdir(path):
+      pass
+    else: raise IOError
+
+
+
+def save( d, filename, protocol='savez_compressed', allow_pickle=True):
+  if prototol == 'savez_compressed':
+    np.savez(ensure_extension(filename, 'npz') , **d, protocol = 'savez_compressed', allow_pickle=allow_pickle)
+  elif prototol == 'savez':
+    f = gzip.GzipFile(ensure_extension(filename, 'pic.gz'), 'wb')
+    cPickle.dump( d, f )
+    f.close()
+  else:
+    f = open(ensure_extension(filename, 'pic'), 'w')
+    cPickle.dump( d, f)
+    f.close()
+
+
+def load( filename, allow_pickle = True ):
+
+  if check_extension(filename, 'npz'):
+    return dict(np.load(filename, allow_pickle=allow_pickle))
+  elif check_extension(filename, 'pic.gz'):
+    return None
+  elif check_extension(filename, 'pic'):
+    return None
+  else:
+    return None
+
+
+
+def get_property( kw, key, default = None ):
   """
-  Use together with NotSet to have only one default value for your job
+  Use together with None to have only one default value for your job
   properties.
   """
-  if not key in kw or kw[key] is NotSet:
+  if not key in kw or kw[key] is None:
     kw[key] = default
   return kw.pop(key)
 
 
-def checkForUnusedVars(d, fcn = None):
+def check_for_unused_vars(d, fcn = None):
   """
     Checks if dict @d has unused properties and print them as warnings
   """
   for key in d.keys():
-    if d[key] is NotSet: continue
+    if d[key] is None: continue
     msg = 'Obtained not needed parameter: %s' % key
     if fcn:
       fcn(msg)
     else:
       print('WARNING:%s' % msg)
-
-
-def str_to_class(module_name, class_name):
-  try:
-    import importlib
-  except ImportError:
-    # load the module, will raise ImportError if module cannot be loaded
-    m = __import__(module_name, globals(), locals(), class_name)
-    # get the class, will raise AttributeError if class cannot be found
-    c = getattr(m, class_name)
-    return c
-  # load the module, will raise ImportError if module cannot be loaded
-  m = importlib.import_module(module_name)
-  # get the class, will raise AttributeError if class cannot be found
-  c = getattr(m, class_name)
-  return c
-
-
-
-def csvStr2List( csvStr ):
-  """
-    Return a list from the comma separated values
-    If input string starts with @, then it is assumed that the leading string
-    an actual path and the content from the file is parsed.
-  """
-  # Treat comma separated lists:
-  if type(csvStr) is str:
-    # Treat files which start with @ as a comma separated list of files
-    if csvStr.startswith('@'):
-      with open( os.path.expandvars( csvStr[1:] ), 'r') as content_file:
-        csvStr = content_file.read()
-        csvStr = csvStr.replace('\n','')
-        if csvStr.endswith(' '): csvStr = csvStr[:-1]
-    csvStr = csvStr.split(',')
-  # Make sure our confFileList is a list (just to be compatible for 
-  if not type(csvStr) is list:
-    csvStr = [csvStr]
-  return csvStr
-
-
-
-def is_tool(name):
-  import subprocess
-  try:
-    devnull = open(os.devnull)
-    subprocess.Popen([name], stdout=devnull, stderr=devnull).communicate()
-  except OSError as e:
-    if e.errno == os.errno.ENOENT:
-      return False
-  return True
-
-
-
-def get_attributes(o, **kw):
-  """
-    Return attributes from a class or object.
-  """
-  onlyVars = kw.pop('onlyVars', False)
-  getProtected = kw.pop('getProtected', True)
-  from Gaugi import checkForUnusedVars
-  checkForUnusedVars(kw)
-  return [(a[0] if onlyVars else a) for a in inspect.getmembers(o, lambda a:not(inspect.isroutine(a))) \
-             if not(a[0].startswith('__') and a[0].endswith('__')) \
-                and (getProtected or not( a[0].startswith('_') or a[0].startswith('__') ) ) ]
-
-
-
-def printArgs(args, fcn = None):
-  try:
-    import pprint as pp
-    if args:
-      if not isinstance(args,dict):
-        args_dict = vars(args)
-      else:
-        args_dict = args
-      msg = 'Retrieved the following configuration:\n%s' % pp.pformat([(key, args_dict[key]) for key in sorted(args_dict.keys())])
-    else:
-      msg = 'Retrieved empty configuration!'
-    if fcn:
-      fcn(msg)
-    else:
-      print ('INFO:%s' % msg)
-  except ImportError:
-    logger.info('Retrieved the following configuration: \n %r', vars(args))
-
-
-def appendToOutput( o, cond, what):
-  """
-  When multiple outputs are configurable, use this method to append to output in case some option is True.
-  """
-  if cond:
-    if type(o) is tuple: o = o + (what,)
-    else: o = o, what
-  return o
-
-
-
-def list_to_stdvector(vecType,l):
-  from ROOT.std import vector
-  vec = vector(vecType)()
-  for v in l:
-    vec.push_back(v)
-  return vec
-
-
-def stdvector_to_list(vec, size=None):
-  if size:
-    l=size*[0]
-  else:
-    l = vec.size()*[0]
-  for i in range(vec.size()):
-    l[i] = vec[i]
-  return l
-
-
 
 
 
@@ -195,9 +173,9 @@ def progressbar(it, count ,prefix="", size=60, step=1, disp=True, logger = None,
     -> no_bl: whether to show messages without breaking lines;
     -> measureTime: display time measurement when completing progressbar task.
   """
-  from Gaugi.messenger import LoggingLevel
+  from Gaugi import LoggingLevel
   from logging import StreamHandler
-  from Gaugi.messenger import nlStatus, resetNlStatus
+  from Gaugi.Logger import nlStatus, resetNlStatus, MyStreamHandler
   import sys
   if level is None: level = LoggingLevel.INFO
   def _show(_i):
@@ -221,6 +199,9 @@ def progressbar(it, count ,prefix="", size=60, step=1, disp=True, logger = None,
     else:
       sys.stdout.write("%s|%s%s| %i/%i\r" % (prefix, "#"*x, "-"*(size-x), _i, count))
       sys.stdout.flush()
+
+
+
   # end of (_show)
   # prepare for looping:
   try:
@@ -234,12 +215,11 @@ def progressbar(it, count ,prefix="", size=60, step=1, disp=True, logger = None,
           sys.stdout.write("\n")
           sys.stdout.flush()
         if no_bl:
-          from Gaugi.messenger.Logger import StreamHandler2
           prev_emit = []
           # TODO On python3, all we need to do is to change the Handler.terminator
           for handler in logger.handlers:
             if type(handler) is StreamHandler:
-              stream = StreamHandler2( handler )
+              stream = MyStreamHandler( handler )
               prev_emit.append( handler.emit )
               setattr(handler, StreamHandler.emit.__name__, stream.emit_no_nl)
       _show(0)
@@ -301,6 +281,8 @@ def progressbar(it, count ,prefix="", size=60, step=1, disp=True, logger = None,
     # re-raise:
     raise e
   # end of (final treatments)
+
+
 
 def traverse(o, tree_types=(list, tuple),
     max_depth_dist=0, max_depth=np.iinfo(np.uint64).max, 
@@ -417,3 +399,35 @@ def traverse(o, tree_types=(list, tuple),
       yield level
     else:
       yield o, parent_idx, parent, 0, level
+
+
+
+def list2stdvector(vecType,l):
+  from ROOT.std import vector
+  vec = vector(vecType)()
+  for v in l:
+    vec.push_back(v)
+  return vec
+
+
+def stdvector2list(vec, size=None):
+  if size:
+    l=size*[0]
+  else:
+    l = vec.size()*[0]
+  for i in range(vec.size()):
+    l[i] = vec[i]
+  return l
+
+
+
+def get_attributes(o, **kw):
+  """
+    Return attributes from a class or object.
+  """
+  onlyVars = kw.pop('onlyVars', False)
+  getProtected = kw.pop('getProtected', True)
+  check_for_unused_vars(kw)
+  return [(a[0] if onlyVars else a) for a in inspect.getmembers(o, lambda a:not(inspect.isroutine(a))) \
+             if not(a[0].startswith('__') and a[0].endswith('__')) \
+                and (getProtected or not( a[0].startswith('_') or a[0].startswith('__') ) ) ]

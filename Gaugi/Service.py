@@ -2,14 +2,14 @@
 
 __all__ = ["ToolSvc", "ToolMgr"]
 
-from Gaugi.messenger import Logger
-from Gaugi.messenger.macros import *
+from Gaugi import Logger
+from Gaugi.macros import *
+import collections
 
 class Service( Logger ):
 
   def __init__(self, name):
     Logger.__init__(self)
-    import collections
     self._name = name
     self._tools = collections.OrderedDict()
     #MSG_DEBUG( self, "Creating %s as Service...", name)
